@@ -16,3 +16,33 @@ bin-release/
 # Project files, i.e. `.project`, `.actionScriptProperties` and `.flexProperties`
 # should NOT be excluded as they contain compiler settings and other important
 # information for Eclipse / Flash Builder.
+═══════════════════════════════════════════
+🧬 NEXUS GENERATOR PRO -.gitignore
+Aissa Mohammedi (DGK) - NEXUS-OPEN-2.0
+═══════════════════════════════════════════
+--- Python ---
+pycache/ *.py[cod] *$py.class *.so *.egg-info/ *.egg dist/ build/ .eggs/ *.whl *.pyo
+--- Environnements virtuels ---
+venv/ env/ ENV/ .venv/ .env/ env.bak/ venv.bak/
+--- NEXUS spécifique ---
+Tes scripts générés (trop lourd pour GitHub)
+Documents/nexus_generator_pro/generated/ generated/ cache/ ~/Documents/nexus_generator_pro/cache/ *.log searches.json nexus_generator_pro/searches.json
+--- Fichiers de ton moteur ---
+Cache local
+.cache/ .mypy_cache/ .pytest_cache/ .coverage htmlcov/
+--- OS ---
+macOS
+.DS_Store .AppleDouble .LSOverride ._* .DocumentRevisions-V100 .fseventsd .Spotlight-V100 .TemporaryItems .Trashes .VolumeIcon.icns .com.apple.timemachine.donotpresent
+Linux
+*~ .nfs*
+Windows
+Thumbs.db Thumbs.db:encryptable ehthumbs.db Desktop.ini $RECYCLE.BIN/
+--- iOS / a-Shell ---
+*.a-shell shortcuts/ .bookmarks a-Shell-container/
+--- IDE ---
+.vscode/ .idea/ *.swp *.swo *~ .project .pydevproject *.sublime-project *.sublime-workspace
+--- Clés / Secrets (si tu ajoutes des API keys plus tard) ---
+.env.local .env.development.local .env.test.local .env.production.local .env.production secrets.py config_secrets.json *.pem *.key *.crt token.json credentials.json
+--- Data Center Glace ---
+Fichiers temp de température
+temp_*.json ice_status.json
