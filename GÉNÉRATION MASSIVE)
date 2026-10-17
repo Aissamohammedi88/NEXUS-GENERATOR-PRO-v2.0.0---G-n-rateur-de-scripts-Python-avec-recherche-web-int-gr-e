@@ -1,0 +1,1528 @@
+#!/usr/bin/env python3# -*- coding: utf-8 -*-
+"""
+NEXUS GEN v8.0.0 — MONOLITHE SUPRÊME (PORT 3000, GÉNÉRATION MASSIVE)
+================================================================
+Génération massive : 10 000 à 20 000 lignes configurables
+Buffer : 100 000 octets | Port : 3000 | 12 langages massifs
+Auteur : Aissa Mohammedi (DGK) | Licence : NEXUS-OPEN-3.0
+"""
+
+import os, sys, re, json, ast, time, ssl, socket, hashlib, threading
+import datetime, textwrap, subprocess, urllib.parse, urllib.request, urllib.error
+from pathlib import Path
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from socketserver import ThreadingMixIn
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections import Counter, defaultdict, OrderedDict
+from dataclasses import dataclass, field, asdict
+from typing import Any, Dict, List, Optional, Set, Tuple
+
+# ============================================================
+# CONSTANTES GLOBALES
+# ============================================================
+VERSION = "8.0.0"
+AUTEUR = "Aissa Mohammedi (DGK)"
+LICENCE = "NEXUS-OPEN-3.0"
+BUFFER_SIZE = 100000
+PORT = int(os.environ.get("PORT", 3000))
+MAX_CONTENT = 100000
+
+# ⚡ CONTRÔLE DE TAILLE DE GÉNÉRATION
+MIN_LIGNES = 10000
+MAX_LIGNES = 20000
+DEFAULT_LIGNES = 10000
+
+HOME = Path(os.path.expanduser("~"))
+BASE = HOME / "Documents" / "nexus_gen"
+for _d in (BASE, BASE/"generated", BASE/"reports", BASE/"cache", BASE/"knowledge"):
+_d.mkdir(parents=True, exist_ok=True)
+
+# ============================================================
+# SECTION 1 · LANGAGES
+# ============================================================
+LANGAGES_SUPPORTES = {
+"python": [".py", ".pyw", ".pyi", ".pyx", ".pxd", ".pyz"],
+"rust": [".rs", ".rlib", ".rmeta"],
+"java": [".java", ".jar", ".class", ".jsp"],
+"go": [".go", ".mod", ".sum"],
+"c": [".c", ".h", ".i"],
+"cpp": [".cpp", ".cc", ".cxx", ".hpp"],
+"csharp": [".cs", ".csx", ".csproj"],
+"ruby": [".rb", ".rbw", ".rake"],
+"php": [".php", ".php3", ".php4", ".php5", ".php7", ".php8"],
+"swift": [".swift", ".pbxproj"],
+"kotlin": [".kt", ".kts"],
+"typescript": [".ts", ".tsx", ".mts", ".cts"],
+"javascript": [".js", ".mjs", ".cjs", ".jsx"],
+"scala": [".scala", ".sc"],
+"elixir": [".ex", ".exs"],
+"erlang": [".erl", ".hrl"],
+"haskell": [".hs", ".lhs"],
+"ocaml": [".ml", ".mli"],
+"fsharp": [".fs", ".fsi"],
+"lua": [".lua", ".rockspec"],
+"dart": [".dart"],
+"julia": [".jl"],
+"r": [".r", ".R", ".Rmd"],
+"perl": [".pl", ".pm", ".t"],
+"bash": [".sh", ".bash", ".zsh"],
+"powershell": [".ps1", ".psm1"],
+"html": [".html", ".htm"],
+"css": [".css", ".scss", ".sass"],
+"sql": [".sql", ".ddl"],
+"yaml": [".yml", ".yaml"],
+"json": [".json", ".json5"],
+"xml": [".xml", ".xsd"],
+"markdown": [".md", ".markdown"],
+"solidity": [".sol"],
+"cuda": [".cu", ".cuh"],
+"assembly": [".asm", ".s", ".S"],
+"fortran": [".f", ".f77", ".f90"],
+"cobol": [".cob", ".cbl"],
+"lisp": [".lisp", ".lsp"],
+"zig": [".zig"],
+"graphql": [".graphql", ".gql"],
+"terraform": [".tf", ".hcl"],
+"dockerfile": ["Dockerfile"],
+"makefile": ["Makefile"],
+"cmake": ["CMakeLists.txt"],
+}
+TOTAL_EXTENSIONS = sum(len(v) for v in LANGAGES_SUPPORTES.values())
+EXT_TO_LANG = {}
+for lang, exts in LANGAGES_SUPPORTES.items():
+for ext in exts:
+EXT_TO_LANG[ext.lower()] = lang
+
+# ============================================================
+# SECTION 2 · 15 NICHES
+# ============================================================
+NICHES = {
+"web": {"nom": "Web / Backend", "langages": ["python","javascript","typescript","php","ruby","go","java","csharp","html","css","sql"]},
+"data": {"nom": "Data Science / ML / IA", "langages": ["python","r","julia","scala","sql"]},
+"security": {"nom": "Cybersécurité / Pentest", "langages": ["python","bash","powershell","c","cpp","assembly","sql"]},
+"devops": {"nom": "DevOps / Cloud / IaC", "langages": ["yaml","bash","python","go","dockerfile","terraform"]},
+"iot": {"nom": "IoT / Embedded", "langages": ["c","cpp","python","rust","assembly"]},
+"gamedev": {"nom": "Game Dev / Graphics", "langages": ["cpp","csharp","rust","lua"]},
+"blockchain": {"nom": "Blockchain / Web3", "langages": ["solidity","rust","go","typescript"]},
+"bioinfo": {"nom": "Bio-informatique", "langages": ["python","r","julia","perl","bash"]},
+"quantum": {"nom": "Quantique / HPC", "langages": ["python","cpp","c","fortran","cuda"]},
+"cad": {"nom": "CAD / 3D / PCB", "langages": ["python","cpp","csharp"]},
+"math": {"nom": "Mathématiques / Physique", "langages": ["python","julia","r","fortran"]},
+"finance": {"nom": "Finance / Trading", "langages": ["python","r","sql","cpp"]},
+"nlp": {"nom": "NLP / Traduction", "langages": ["python","r","julia"]},
+"network": {"nom": "Réseau / Télécoms", "langages": ["python","c","cpp","go","bash"]},
+"automation": {"nom": "Automatisation / RPA", "langages": ["python","bash","powershell","javascript"]},
+}
+
+def detecter_langage(fichier):
+if not fichier: return None
+base = os.path.basename(fichier).lower()
+specials = {"dockerfile":"dockerfile","makefile":"makefile","cmakelists.txt":"cmake","readme":"markdown"}
+if base in specials: return specials[base]
+if base.startswith("readme"): return "markdown"
+for ext in sorted(EXT_TO_LANG.keys(), key=len, reverse=True):
+if base.endswith(ext): return EXT_TO_LANG[ext]
+return None
+
+def detecter_niche(langage):
+return [k for k, v in NICHES.items() if langage in v["langages"]]
+
+# ============================================================
+# SECTION 3 · PATTERNS DE SÉCURITÉ
+# ============================================================
+PATTERNS_SECRETS = [
+(re.compile(r'(?:password|passwd|pwd)\s*[:=]\s*["\']([^"\']{6,})["\']', re.I), "password_hardcoded", "high"),
+(re.compile(r'(?:api[_-]?key|apikey)\s*[:=]\s*["\']([^"\']{12,})["\']', re.I), "api_key_hardcoded", "high"),
+(re.compile(r'AKIA[0-9A-Z]{16}'), "aws_access_key", "critical"),
+(re.compile(r'-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----'), "private_key", "critical"),
+(re.compile(r'ghp_[A-Za-z0-9]{36}'), "github_token", "critical"),
+(re.compile(r'sk-[A-Za-z0-9]{32,}'), "openai_key", "critical"),
+(re.compile(r'AIza[0-9A-Za-z\-_]{35}'), "google_api_key", "critical"),
+(re.compile(r'eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}'), "jwt_token", "medium"),
+]
+
+PATTERNS_TODO = [
+(re.compile(r'\bTODO\b'), "TODO", "low"),
+(re.compile(r'\bFIXME\b'), "FIXME", "medium"),
+(re.compile(r'\bHACK\b'), "HACK", "medium"),
+(re.compile(r'\bBUG\b'), "BUG", "high"),
+]
+
+PATTERNS_DANGER = {
+"python": [
+(re.compile(r'\beval\s*\('), "eval_usage", "high"),
+(re.compile(r'\bexec\s*\('), "exec_usage", "high"),
+(re.compile(r'subprocess\.\w+\([^)]*shell\s*=\s*True'), "shell_injection", "critical"),
+(re.compile(r'pickle\.loads?\s*\('), "pickle_deserialization", "high"),
+(re.compile(r'os\.system\s*\('), "os_system", "high"),
+],
+"javascript": [
+(re.compile(r'\beval\s*\('), "eval_usage", "high"),
+(re.compile(r'innerHTML\s*='), "xss_innerHTML", "high"),
+],
+"php": [
+(re.compile(r'\beval\s*\('), "eval_php", "high"),
+(re.compile(r'\bshell_exec\s*\('), "shell_exec_php", "critical"),
+(re.compile(r'\bunserialize\s*\('), "php_unserialize", "critical"),
+],
+"c": [
+(re.compile(r'\bstrcpy\s*\('), "strcpy_unsafe", "high"),
+(re.compile(r'\bgets\s*\('), "gets_unsafe", "critical"),
+],
+"sql": [
+(re.compile(r'DROP\s+TABLE', re.I), "drop_table", "critical"),
+(re.compile(r'TRUNCATE\s+TABLE', re.I), "truncate_table", "critical"),
+],
+"bash": [
+(re.compile(r'curl\s+[^|]*\|\s*(?:ba)?sh'), "curl_pipe_sh", "critical"),
+],
+}
+
+def analyser_code(code, langage):
+if not code: return {"problemes": [], "metriques": {}}
+lignes = code.split("\n")
+problemes = []
+for pattern, nom, severite in PATTERNS_SECRETS:
+for i, ligne in enumerate(lignes, 1):
+if pattern.search(ligne):
+if any(x in ligne.lower() for x in ["example","placeholder","xxx","change_me"]): continue
+problemes.append({"type": nom, "severite": severite, "ligne": i, "extrait": ligne.strip()[:120]})
+for pattern, nom, severite in PATTERNS_TODO:
+for i, ligne in enumerate(lignes, 1):
+if pattern.search(ligne):
+problemes.append({"type": nom, "severite": severite, "ligne": i, "extrait": ligne.strip()[:120]})
+lang_key = langage.lower() if langage else ""
+if lang_key in PATTERNS_DANGER:
+for pattern, nom, severite in PATTERNS_DANGER[lang_key]:
+for i, ligne in enumerate(lignes, 1):
+if pattern.search(ligne):
+stripped = ligne.strip()
+if stripped.startswith(("#","//","/*","*","--")): continue
+problemes.append({"type": nom, "severite": severite, "ligne": i, "extrait": stripped[:120]})
+lignes_vides = sum(1 for l in lignes if not l.strip())
+lignes_code = len(lignes) - lignes_vides
+complexite = 1
+for l in lignes:
+complexite += len(re.findall(r'\b(?:if|elif|for|while|case|catch|except)\b', l))
+fonctions = []
+for i, l in enumerate(lignes, 1):
+m = re.match(r'\s*(?:def|fn|func|function)\s+(\w+)', l)
+if m: fonctions.append({"nom": m.group(1), "ligne": i})
+return {
+"problemes": problemes,
+"metriques": {
+"lignes_total": len(lignes), "lignes_vides": lignes_vides,
+"lignes_code": lignes_code, "complexite_cyclomatique": complexite,
+"fonctions": len(fonctions), "octets": len(code.encode("utf-8", "ignore")),
+},
+}
+
+# ============================================================
+# SECTION 4 · HTTP CLIENT & 10 APIS
+# ============================================================
+HTTP_CACHE = {}
+HTTP_LOCK = threading.Lock()
+
+def http_get(url, headers=None, timeout=10, use_cache=True):
+if use_cache:
+with HTTP_LOCK:
+e = HTTP_CACHE.get(url)
+if e and time.time() - e["ts"] < 300: return e["data"]
+h = {"User-Agent": f"NexusGen/{VERSION}", "Accept": "*/*"}
+if headers: h.update(headers)
+try:
+req = urllib.request.Request(url, headers=h)
+ctx = ssl.create_default_context()
+ctx.check_hostname = False
+ctx.verify_mode = ssl.CERT_NONE
+with urllib.request.urlopen(req, timeout=timeout, context=ctx) as r:
+data = r.read().decode("utf-8", "ignore")
+if use_cache:
+with HTTP_LOCK: HTTP_CACHE[url] = {"data": data, "ts": time.time()}
+return data
+except Exception as e:
+return f'{{"error":"{str(e)[:100]}"}}'
+
+def http_get_json(url, headers=None, timeout=10, use_cache=True):
+raw = http_get(url, headers, timeout, use_cache)
+try: return json.loads(raw)
+except: return {"error": "invalid_json"}
+
+APIS = {}
+def register_api(name):
+def deco(fn): APIS[name] = fn; return fn
+return deco
+
+@register_api("pypi")
+def _pypi(q, limit=5):
+d = http_get_json(f"https://pypi.org/pypi/{urllib.parse.quote(q)}/json", timeout=8)
+if "info" in d:
+i = d["info"]
+return [{"name": i.get("name"), "version": i.get("version"), "summary": (i.get("summary") or "")[:200]}]
+return []
+
+@register_api("npm")
+def _npm(q, limit=5):
+d = http_get_json(f"https://registry.npmjs.org/-/v1/search?text={urllib.parse.quote(q)}&size={limit}")
+if not d or "objects" not in d: return []
+return [{"name": o["package"].get("name"), "description": (o["package"].get("description") or "")[:200]} for o in d["objects"][:limit]]
+
+@register_api("github")
+def _github(q, limit=5):
+h = {"Accept": "application/vnd.github.v3+json"}
+d = http_get_json(f"https://api.github.com/search/repositories?q={urllib.parse.quote(q)}&per_page={limit}&sort=stars", h)
+if not d or "items" not in d: return []
+return [{"name": i.get("full_name"), "url": i.get("html_url"), "stars": i.get("stargazers_count")} for i in d["items"][:limit]]
+
+@register_api("stackoverflow")
+def _so(q, limit=5):
+url = f"https://api.stackexchange.com/2.3/search/advanced?order=desc&sort=relevance&q={urllib.parse.quote(q)}&site=stackoverflow&pagesize={limit}"
+d = http_get_json(url)
+if not d or "items" not in d: return []
+return [{"title": i.get("title"), "url": i.get("link")} for i in d["items"][:limit]]
+
+@register_api("wikipedia")
+def _wiki(q, limit=3):
+url = f"https://fr.wikipedia.org/w/api.php?action=query&list=search&srsearch={urllib.parse.quote(q)}&srlimit={limit}&format=json"
+d = http_get_json(url)
+if not d or "query" not in d: return []
+return [{"title": i.get("title")} for i in d["query"].get("search", [])[:limit]]
+
+@register_api("huggingface")
+def _hf(q, limit=5):
+d = http_get_json(f"https://huggingface.co/api/models?search={urllib.parse.quote(q)}&limit={limit}&sort=downloads")
+if not isinstance(d, list): return []
+return [{"id": m.get("id"), "downloads": m.get("downloads", 0)} for m in d[:limit]]
+
+@register_api("crates")
+def _crates(q, limit=5):
+d = http_get_json(f"https://crates.io/api/v1/crates?q={urllib.parse.quote(q)}&per_page={limit}")
+if not d or "crates" not in d: return []
+return [{"name": c.get("name")} for c in d["crates"][:limit]]
+
+@register_api("duckduckgo")
+def _ddg(q, limit=10):
+url = f"https://api.duckduckgo.com/?q={urllib.parse.quote(q)}&format=json&no_html=1"
+d = http_get_json(url)
+if not d or "error" in d: return []
+results = []
+if d.get("AbstractText"):
+results.append({"title": d.get("Heading", ""), "snippet": d.get("AbstractText", "")[:400]})
+for topic in d.get("RelatedTopics", [])[:limit]:
+if isinstance(topic, dict) and "Text" in topic:
+results.append({"title": topic.get("Text", "")[:100]})
+return results[:limit]
+
+def search_all_apis(query, max_workers=20):
+results = {}
+with ThreadPoolExecutor(max_workers=max_workers) as ex:
+futures = {ex.submit(fn, query, 3): name for name, fn in APIS.items()}
+for fut in as_completed(futures):
+name = futures[fut]
+try: results[name] = fut.result(timeout=15)
+except Exception as e: results[name] = {"error": str(e)[:120]}
+return results
+
+# ============================================================
+# SECTION 5 · KNOWLEDGE BASE
+# ============================================================
+KNOWLEDGE_FILE = BASE / "knowledge" / "kb.jsonl"
+
+class KnowledgeBase:
+def __init__(self):
+self.items = []
+if KNOWLEDGE_FILE.exists():
+try:
+with open(KNOWLEDGE_FILE, "r") as f:
+for line in f:
+try: self.items.append(json.loads(line))
+except: continue
+except: pass
+def add(self, item):
+self.items.append(item)
+try:
+with open(KNOWLEDGE_FILE, "a") as f:
+f.write(json.dumps(item, ensure_ascii=False) + "\n")
+except: pass
+def size(self): return len(self.items)
+
+KB = KnowledgeBase()
+
+def enrichir_kb(query):
+results = search_all_apis(query)
+count = 0
+for api_name, items in results.items():
+if not isinstance(items, list): continue
+for item in items:
+if not isinstance(item, dict): continue
+KB.add({"source": api_name, "query": query, "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(), "data": item})
+count += 1
+return count
+
+# ============================================================
+# SECTION 6 · GÉNÉRATEURS MASSIFS (10K-20K LIGNES)
+# ============================================================
+
+# ─── BLOCS RÉUTILISABLES PAR LANGAGE ───
+def _bloc_python(mid, port):
+return textwrap.dedent(f'''
+# ============================================================
+# MODULE {mid:04d} — Route API Python
+# ============================================================
+class Module{mid:04d}:
+"""Module {mid} — gestion de route API"""
+VERSION = "{VERSION}"
+PORT = {port}
+def __init__(self):
+self.id = {mid}
+self.name = "module_{mid:04d}"
+self.cache = {{}}
+self.stats = {{"appels": 0, "erreurs": 0, "succes": 0}}
+def route_{mid:04d}(self, request):
+self.stats["appels"] += 1
+try:
+path = request.get("path", "/")
+method = request.get("method", "GET")
+payload = request.get("payload", {{}})
+result = self._process_{mid:04d}(path, method, payload)
+self.stats["succes"] += 1
+return {{"ok": True, "module": self.id, "result": result}}
+except Exception as e:
+self.stats["erreurs"] += 1
+return {{"ok": False, "module": self.id, "error": str(e)}}
+def _process_{mid:04d}(self, path, method, payload):
+key = f"{{method}}:{{path}}"
+if key in self.cache: return self.cache[key]
+result = {{"method": method, "path": path, "data": payload, "module": self.id}}
+self.cache[key] = result
+return result
+def stats_{mid:04d}(self): return self.stats
+def reset_{mid:04d}(self):
+self.cache = {{}}
+self.stats = {{"appels": 0, "erreurs": 0, "succes": 0}}
+return True
+''').strip() + "\n"
+
+def _bloc_rust(mid, port):
+return textwrap.dedent(f'''
+// ============================================================
+// MODULE {mid:04d} — Handler Rust
+// ============================================================
+pub struct Module{mid:04d} {{
+id: u32,
+name: String,
+}}
+impl Module{mid:04d} {{
+pub fn new() -> Self {{
+Self {{ id: {mid}, name: "module_{mid:04d}".to_string() }}
+}}
+pub fn route_{mid:04d}(&self, req: &str) -> String {{
+format!("{{}} -> module {{}}", req, self.id)
+}}
+pub fn stats_{mid:04d}(&self) -> u32 {{ self.id }}
+}}
+''').strip() + "\n"
+
+def _bloc_java(mid, port):
+return textwrap.dedent(f'''
+// ============================================================
+// MODULE {mid:04d} — Handler Java
+// ============================================================
+class Module{mid:04d} {{
+private int id = {mid};
+private String name = "module_{mid:04d}";
+public String route_{mid:04d}(String req) {{ return req + " -> " + name; }}
+public int stats_{mid:04d}() {{ return id; }}
+}}
+''').strip() + "\n"
+
+def _bloc_go(mid, port):
+return textwrap.dedent(f'''
+// ============================================================
+// MODULE {mid:04d} — Handler Go
+// ============================================================
+type Module{mid:04d} struct {{
+ID int
+Name string
+}}
+func NewModule{mid:04d}() *Module{mid:04d} {{
+return &Module{mid:04d}{{ID: {mid}, Name: "module_{mid:04d}"}}
+}}
+func (m *Module{mid:04d}) Route(req string) string {{
+return req + " -> " + m.Name
+}}
+''').strip() + "\n"
+
+def _bloc_c(mid, port):
+return textwrap.dedent(f'''
+/* ============================================================
+* MODULE {mid:04d} — Handler C
+* ============================================================ */
+static int module_{mid:04d}_handle(const char* req) {{ return {mid}; }}
+static const char* module_{mid:04d}_name(void) {{ return "module_{mid:04d}"; }}
+''').strip() + "\n"
+
+def _bloc_cpp(mid, port):
+return textwrap.dedent(f'''
+// ============================================================
+// MODULE {mid:04d} — Handler C++
+// ============================================================
+class Module{mid:04d} {{
+public:
+int id = {mid};
+std::string name = "module_{mid:04d}";
+std::string route(const std::string& req) {{ return req + " -> " + name; }}
+}};
+''').strip() + "\n"
+
+def _bloc_csharp(mid, port):
+return textwrap.dedent(f'''
+// ============================================================
+// MODULE {mid:04d} — Handler C#
+// ============================================================
+public class Module{mid:04d} {{
+public int Id = {mid};
+public string Name = "module_{mid:04d}";
+public string Route(string req) {{ return req + " -> " + Name; }}
+}}
+''').strip() + "\n"
+
+def _bloc_ruby(mid, port):
+return textwrap.dedent(f'''
+# ============================================================
+# MODULE {mid:04d} — Handler Ruby
+# ============================================================
+class Module{mid:04d}
+def initialize
+@id = {mid}
+@name = "module_{mid:04d}"
+end
+def route(req)
+"#{{req}} -> #{{@name}}"
+end
+end
+''').strip() + "\n"
+
+def _bloc_php(mid, port):
+return textwrap.dedent(f'''
+<?php
+// ============================================================
+// MODULE {mid:04d} — Handler PHP
+// ============================================================
+class Module{mid:04d} {{
+public $id = {mid};
+public $name = "module_{mid:04d}";
+public function route($req) {{ return $req . " -> " . $this->name; }}
+}}
+''').strip() + "\n"
+
+def _bloc_swift(mid, port):
+return textwrap.dedent(f'''
+// ============================================================
+// MODULE {mid:04d} — Handler Swift
+// ============================================================
+class Module{mid:04d} {{
+let id: Int = {mid}
+let name: String = "module_{mid:04d}"
+func route(_ req: String) -> String {{ return "\\(req) -> \\(name)" }}
+}}
+''').strip() + "\n"
+
+def _bloc_kotlin(mid, port):
+return textwrap.dedent(f'''
+// ============================================================
+// MODULE {mid:04d} — Handler Kotlin
+// ============================================================
+class Module{mid:04d} {{
+val id: Int = {mid}
+val name: String = "module_{mid:04d}"
+fun route(req: String): String = "$req -> $name"
+}}
+''').strip() + "\n"
+
+def _bloc_typescript(mid, port):
+return textwrap.dedent(f'''
+// ============================================================
+// MODULE {mid:04d} — Handler TypeScript
+// ============================================================
+class Module{mid:04d} {{
+id: number = {mid};
+name: string = "module_{mid:04d}";
+route(req: string): string {{ return req + " -> " + this.name; }}
+}}
+''').strip() + "\n"
+
+BLOCS = {
+"python": _bloc_python, "rust": _bloc_rust, "java": _bloc_java, "go": _bloc_go,
+"c": _bloc_c, "cpp": _bloc_cpp, "csharp": _bloc_csharp, "ruby": _bloc_ruby,
+"php": _bloc_php, "swift": _bloc_swift, "kotlin": _bloc_kotlin, "typescript": _bloc_typescript,
+}
+
+# ─── HEADERS PAR LANGAGE ───
+def _header(langage, prompt, port, cible):
+if langage == "python":
+return f'''#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+NEXUS GEN MASSIF — {prompt[:80]}
+Langage : Python | Port : {port} | Cible : {cible} lignes
+Auteur : {AUTEUR} | Licence : {LICENCE}
+"""
+import os, sys, json, socket, datetime, threading, hashlib, random
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from socketserver import ThreadingMixIn
+from collections import defaultdict, OrderedDict
+from concurrent.futures import ThreadPoolExecutor
+
+VERSION = "{VERSION}"
+PORT = {port}
+BUFFER_SIZE = {BUFFER_SIZE}
+
+'''
+if langage == "rust":
+return f'''// NEXUS GEN MASSIF — {prompt[:80]}
+// Rust | Port : {port} | Cible : {cible} lignes
+use std::collections::HashMap;
+use std::sync::Mutex;
+use std::net::{{TcpListener, TcpStream}};
+use std::io::{{Read, Write}};
+use std::thread;
+
+const PORT: u16 = {port};
+const VERSION: &str = "{VERSION}";
+const BUFFER_SIZE: usize = {BUFFER_SIZE};
+
+'''
+if langage == "java":
+return f'''// NEXUS GEN MASSIF — {prompt[:80]}
+// Java | Port : {port} | Cible : {cible} lignes
+import java.io.*;
+import java.net.*;
+import java.util.*;
+import java.util.concurrent.*;
+
+public class Nexus {{
+public static final int PORT = {port};
+public static final String VERSION = "{VERSION}";
+
+'''
+if langage == "go":
+return f'''// NEXUS GEN MASSIF — {prompt[:80]}
+// Go | Port : {port} | Cible : {cible} lignes
+package main
+
+import (
+"fmt"
+"net/http"
+"sync"
+"encoding/json"
+)
+
+const PORT = {port}
+const VERSION = "{VERSION}"
+
+'''
+if langage == "c":
+return f'''/* NEXUS GEN MASSIF — {prompt[:80]}
+* C | Port : {port} | Cible : {cible} lignes */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <unistd.h>
+
+#define PORT {port}
+#define BUFFER_SIZE {BUFFER_SIZE}
+#define VERSION "{VERSION}"
+
+'''
+if langage == "cpp":
+return f'''// NEXUS GEN MASSIF — {prompt[:80]}
+// C++ | Port : {port} | Cible : {cible} lignes
+#include <iostream>
+#include <string>
+#include <vector>
+#include <map>
+#include <thread>
+#include <mutex>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <unistd.h>
+
+constexpr int PORT = {port};
+constexpr int BUFFER_SIZE = {BUFFER_SIZE};
+constexpr const char* VERSION = "{VERSION}";
+
+'''
+if langage == "csharp":
+return f'''// NEXUS GEN MASSIF — {prompt[:80]}
+// C# | Port : {port} | Cible : {cible} lignes
+using System;
+using System.Collections.Generic;
+using System.Net;
+using System.Text;
+using System.Threading;
+
+namespace Nexus {{
+class Program {{
+public const int PORT = {port};
+public const string VERSION = "{VERSION}";
+
+'''
+if langage == "ruby":
+return f'''#!/usr/bin/env ruby
+# NEXUS GEN MASSIF — {prompt[:80]}
+# Ruby | Port : {port} | Cible : {cible} lignes
+require 'json'
+require 'socket'
+
+PORT = {port}
+VERSION = "{VERSION}"
+
+'''
+if langage == "php":
+return f'''<?php
+// NEXUS GEN MASSIF — {prompt[:80]}
+// PHP | Port : {port} | Cible : {cible} lignes
+define('PORT', {port});
+define('VERSION', '{VERSION}');
+
+'''
+if langage == "swift":
+return f'''// NEXUS GEN MASSIF — {prompt[:80]}
+// Swift | Port : {port} | Cible : {cible} lignes
+import Foundation
+import Network
+
+let PORT: UInt16 = {port}
+let VERSION = "{VERSION}"
+
+'''
+if langage == "kotlin":
+return f'''// NEXUS GEN MASSIF — {prompt[:80]}
+// Kotlin | Port : {port} | Cible : {cible} lignes
+import java.net.ServerSocket
+import java.io.PrintWriter
+
+const val PORT = {port}
+const val VERSION = "{VERSION}"
+
+'''
+if langage == "typescript":
+return f'''// NEXUS GEN MASSIF — {prompt[:80]}
+// TypeScript | Port : {port} | Cible : {cible} lignes
+import * as http from "http";
+
+const PORT = {port};
+const VERSION = "{VERSION}";
+
+'''
+return f"// NEXUS MASSIF — {langage} — {prompt[:80]}\n\n"
+
+# ─── FONCTION MAÎTRESSE DE GÉNÉRATION MASSIVE ───
+def generer_massif(prompt, langage, port, cible_lignes=DEFAULT_LIGNES):
+"""
+⚡ GÉNÉRATION MASSIVE — C'est ICI que la taille est contrôlée.
+Empile des modules jusqu'à atteindre cible_lignes (10 000 à 20 000).
+"""
+# Validation de la cible
+cible_lignes = max(MIN_LIGNES, min(MAX_LIGNES, cible_lignes))
+
+bloc_fn = BLOCS.get(langage, BLOCS["python"])
+header = _header(langage, prompt, port, cible_lignes)
+corps = []
+lignes_actuelles = header.count("\n")
+module_id = 1
+max_modules = 5000 # Sécurité
+
+# ⚡ BOUCLE MAÎTRESSE : empile jusqu'à cible
+while lignes_actuelles < cible_lignes and module_id <= max_modules:
+bloc = bloc_fn(module_id, port)
+corps.append(bloc)
+lignes_actuelles += bloc.count("\n")
+module_id += 1
+
+# ─── FOOTER PYTHON ───
+if langage == "python":
+footer = textwrap.dedent(f'''
+
+# ============================================================
+# SERVEUR PRINCIPAL — {module_id-1} modules chargés
+# ============================================================
+class NexusHandler(BaseHTTPRequestHandler):
+rbufsize = BUFFER_SIZE
+wbufsize = BUFFER_SIZE
+modules = []
+def log_message(self, *a): pass
+def do_GET(self):
+result = {{"version": VERSION, "path": self.path, "modules": len(self.modules)}}
+body = json.dumps(result).encode()
+self.send_response(200)
+self.send_header("Content-Type", "application/json")
+self.send_header("Content-Length", str(len(body)))
+self.end_headers()
+self.wfile.write(body)
+def do_POST(self):
+n = int(self.headers.get("Content-Length", "0"))
+raw = self.rfile.read(min(n, BUFFER_SIZE))
+body = json.dumps({{"ok": True, "received": len(raw)}}).encode()
+self.send_response(200)
+self.send_header("Content-Type", "application/json")
+self.send_header("Content-Length", str(len(body)))
+self.end_headers()
+self.wfile.write(body)
+
+class NexusServer(ThreadingMixIn, HTTPServer):
+daemon_threads = True
+allow_reuse_address = True
+request_queue_size = 1000
+
+def _init_modules():
+NexusHandler.modules = [Module{i:04d}() for i in range(1, {module_id})]
+
+def main():
+_init_modules()
+print(f"🚀 NEXUS MASSIF — {{len(NexusHandler.modules)}} modules — Port {{PORT}}")
+with NexusServer(("0.0.0.0", PORT), NexusHandler) as s:
+s.serve_forever()
+
+if __name__ == "__main__":
+main()
+# Total : ~{lignes_actuelles + 40} lignes
+''').rstrip()
+else:
+footer = f"\n// FIN — {module_id-1} modules — Total ~{lignes_actuelles + 5} lignes\n"
+
+return header + "\n".join(corps) + footer
+
+# ─── GÉNÉRATEURS SIMPLES (templates courts) ───
+GENERATEURS = {}
+def register_gen(name):
+def deco(fn): GENERATEURS[name] = fn; return fn
+return deco
+
+@register_gen("python")
+def _gen_python(prompt, port):
+return textwrap.dedent(f'''
+#!/usr/bin/env python3
+# NEXUS Python — {prompt[:80]}
+import os, sys, json, socket, datetime
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from socketserver import ThreadingMixIn
+VERSION = "{VERSION}"
+PORT = {port}
+BUFFER = 100000
+class H(BaseHTTPRequestHandler):
+rbufsize = BUFFER
+wbufsize = BUFFER
+def log_message(self, *a): pass
+def do_GET(self):
+b = json.dumps({{"version": VERSION, "path": self.path}}).encode()
+self.send_response(200)
+self.send_header("Content-Type", "application/json")
+self.send_header("Content-Length", str(len(b)))
+self.end_headers()
+self.wfile.write(b)
+class S(ThreadingMixIn, HTTPServer):
+daemon_threads = True
+request_queue_size = 1000
+if __name__ == "__main__":
+print("Port", PORT)
+with S(("0.0.0.0", PORT), H) as s:
+s.serve_forever()
+''').strip()
+
+@register_gen("rust")
+def _gen_rust(prompt, port):
+return textwrap.dedent(f'''
+// NEXUS Rust — {prompt[:80]}
+use std::net::{{TcpListener, TcpStream}};
+use std::io::{{Read, Write}};
+use std::thread;
+const PORT: u16 = {port};
+const VERSION: &str = "{VERSION}";
+fn handle(mut s: TcpStream) {{
+let mut buf = [0; 1024];
+if s.read(&mut buf).is_ok() {{
+let body = "{{\\"version\\":\\"{VERSION}\\"}}";
+let resp = format!("HTTP/1.1 200 OK\\r\\nContent-Type: application/json\\r\\nContent-Length: {{}}\\r\\n\\r\\n{{}}", body.len(), body);
+let _ = s.write(resp.as_bytes());
+}}
+}}
+fn main() {{
+let l = TcpListener::bind(format!("0.0.0.0:{{}}", PORT)).unwrap();
+println!("Port {{}}", PORT);
+for s in l.incoming() {{ if let Ok(s) = s {{ thread::spawn(move || handle(s)); }} }}
+}}
+''').strip()
+
+@register_gen("java")
+def _gen_java(prompt, port):
+return textwrap.dedent(f'''
+// NEXUS Java — {prompt[:80]}
+import java.io.*;
+import java.net.*;
+public class Nexus {{
+public static final int PORT = {port};
+public static void main(String[] a) throws IOException {{
+try (ServerSocket s = new ServerSocket(PORT)) {{
+System.out.println("Port " + PORT);
+while (true) {{ Socket c = s.accept(); new Thread(() -> handle(c)).start(); }}
+}}
+}}
+static void handle(Socket c) {{
+try (PrintWriter o = new PrintWriter(c.getOutputStream())) {{
+String body = "{{\\"version\\":\\"{VERSION}\\"}}";
+o.println("HTTP/1.1 200 OK");
+o.println("Content-Type: application/json");
+o.println("Content-Length: " + body.length());
+o.println();
+o.print(body); o.flush();
+}} catch (Exception e) {{ }}
+}}
+}}
+''').strip()
+
+@register_gen("go")
+def _gen_go(prompt, port):
+return textwrap.dedent(f'''
+// NEXUS Go — {prompt[:80]}
+package main
+import ("fmt"; "net/http")
+func main() {{
+http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {{
+w.Header().Set("Content-Type", "application/json")
+fmt.Fprintf(w, "{{\\"version\\":\\"{VERSION}\\"}}")
+}})
+fmt.Println("Port {port}")
+http.ListenAndServe("0.0.0.0:{port}", nil)
+}}
+''').strip()
+
+@register_gen("typescript")
+def _gen_typescript(prompt, port):
+return textwrap.dedent(f'''
+// NEXUS TypeScript — {prompt[:80]}
+import * as http from "http";
+const PORT = {port};
+const VERSION = "{VERSION}";
+const server = http.createServer((req, res) => {{
+res.writeHead(200, {{ "Content-Type": "application/json" }});
+res.end(JSON.stringify({{ version: VERSION, path: req.url }}));
+}});
+server.listen(PORT, "0.0.0.0", () => {{ console.log(`Port ${{PORT}}`); }});
+''').strip()
+
+def generer_script(prompt, langage, port):
+if langage in GENERATEURS:
+return GENERATEURS[langage](prompt, port)
+return GENERATEURS["python"](prompt, port)
+
+# ============================================================
+# SECTION 7 · 8 OUTILS MCP
+# ============================================================
+PROJECT_STRUCTURES = {
+"python": {"files": ["src/main.py", "src/utils.py", "tests/test_main.py", "requirements.txt", "README.md"], "dirs": ["src/", "tests/"], "entry_point": "src/main.py"},
+"rust": {"files": ["src/main.rs", "Cargo.toml", "README.md"], "dirs": ["src/", "tests/"], "entry_point": "src/main.rs"},
+"java": {"files": ["src/main/java/Main.java", "pom.xml"], "dirs": ["src/main/java/"], "entry_point": "src/main/java/Main.java"},
+"go": {"files": ["main.go", "go.mod"], "dirs": ["internal/", "cmd/"], "entry_point": "main.go"},
+"c": {"files": ["src/main.c", "Makefile"], "dirs": ["src/", "include/"], "entry_point": "src/main.c"},
+"cpp": {"files": ["src/main.cpp", "CMakeLists.txt"], "dirs": ["src/", "include/"], "entry_point": "src/main.cpp"},
+"csharp": {"files": ["Program.cs", "Nexus.csproj"], "dirs": ["src/"], "entry_point": "Program.cs"},
+"ruby": {"files": ["lib/main.rb", "Gemfile"], "dirs": ["lib/"], "entry_point": "main.rb"},
+"php": {"files": ["index.php", "composer.json"], "dirs": ["src/"], "entry_point": "index.php"},
+"swift": {"files": ["Sources/main.swift", "Package.swift"], "dirs": ["Sources/"], "entry_point": "Sources/main.swift"},
+"kotlin": {"files": ["src/main/kotlin/Main.kt", "build.gradle.kts"], "dirs": ["src/main/kotlin/"], "entry_point": "src/main/kotlin/Main.kt"},
+"typescript": {"files": ["src/index.ts", "package.json", "tsconfig.json"], "dirs": ["src/"], "entry_point": "src/index.ts"},
+"generic": {"files": ["main.txt", "README.md"], "dirs": ["src/"], "entry_point": "main.txt"},
+}
+
+SYSTEM_PROMPTS = {
+"python": "Expert Python. Code idiomatique, PEP 8, typage, docstrings.",
+"rust": "Expert Rust. Code sûr, Result<T,E>, pas de unwrap non justifié.",
+"java": "Expert Java. POO stricte, interfaces, exceptions propres.",
+"go": "Expert Go. Code simple, idiomatique, gestion d'erreurs explicite.",
+"c": "Expert C. Code portable, gestion mémoire manuelle.",
+"cpp": "Expert C++. RAII, smart pointers, STL.",
+"csharp": "Expert C#. .NET moderne, LINQ, async/await.",
+"ruby": "Expert Ruby. Code élégant, conventions Rails.",
+"php": "Expert PHP. PSR-12, typage strict.",
+"swift": "Expert Swift. Code sûr, optionnels, protocoles.",
+"kotlin": "Expert Kotlin. Code concis, null-safety.",
+"typescript": "Expert TypeScript. Typage strict, pas de any.",
+"generic": "Expert programmation. Code propre, testable.",
+}
+
+def tool_list_languages():
+return {"ok": True, "languages": list(LANGAGES_SUPPORTES.keys()),
+"count": len(LANGAGES_SUPPORTES), "with_generators": list(GENERATEURS.keys()),
+"with_massive": list(BLOCS.keys()), "extensions": TOTAL_EXTENSIONS}
+
+def tool_parse_spec(spec_markdown):
+if not spec_markdown: return {"ok": False, "error": "spec vide"}
+lines = spec_markdown.split("\n")
+spec = {"title": "", "languages": [], "requirements": [], "constraints": []}
+current = None
+for line in lines:
+stripped = line.strip()
+if line.startswith("# ") and not spec["title"]:
+spec["title"] = line[2:].strip()
+elif line.startswith("## "):
+current = line[3:].strip().lower()
+elif stripped.startswith("- ") or stripped.startswith("* "):
+item = stripped[2:].strip()
+if not item: continue
+if current and "lang" in current: spec["languages"].append(item.lower())
+elif current and "requis" in current: spec["requirements"].append(item)
+elif current and "contrainte" in current: spec["constraints"].append(item)
+return {"ok": True, "spec": spec}
+
+def tool_validate_spec(spec):
+if not spec: return {"ok": False, "valid": False, "error": "spec vide"}
+errors, warnings = [], []
+if not spec.get("title"): errors.append("Titre manquant")
+if not spec.get("requirements"): warnings.append("Aucune exigence")
+return {"ok": True, "valid": len(errors) == 0, "errors": errors, "warnings": warnings}
+
+def tool_get_generation_context(spec, langage):
+lang_key = langage.lower()
+if lang_key not in LANGAGES_SUPPORTES:
+return {"ok": False, "error": f"Langage non supporté : {langage}"}
+return {"ok": True, "langage": langage, "spec": spec,
+"system_prompt": SYSTEM_PROMPTS.get(lang_key, SYSTEM_PROMPTS["generic"]),
+"project_structure": PROJECT_STRUCTURES.get(lang_key, PROJECT_STRUCTURES["generic"]),
+"niches": detecter_niche(lang_key),
+"massive_support": lang_key in BLOCS}
+
+def tool_get_project_structure(langage):
+lang_key = langage.lower()
+if lang_key not in LANGAGES_SUPPORTES:
+return {"ok": False, "error": f"Langage non supporté : {langage}"}
+return {"ok": True, "langage": langage,
+"structure": PROJECT_STRUCTURES.get(lang_key, PROJECT_STRUCTURES["generic"])}
+
+def tool_ensure_parity(code1, code2, langage="python"):
+if not code1 or not code2: return {"ok": False, "error": "deux codes requis"}
+r1, r2 = analyser_code(code1, langage), analyser_code(code2, langage)
+diffs = []
+for key in ["lignes_total", "lignes_code", "complexite_cyclomatique"]:
+v1, v2 = r1["metriques"].get(key, 0), r2["metriques"].get(key, 0)
+if v1 != v2: diffs.append({"metric": key, "code1": v1, "code2": v2, "delta": v2 - v1})
+return {"ok": True, "parity": len(diffs) == 0, "differences": diffs}
+
+def tool_import_spec_from_github(url):
+if not url: return {"ok": False, "error": "url requise"}
+original = url
+if "github.com" in url and "/blob/" in url:
+url = url.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
+content = http_get(url, timeout=15)
+if content.startswith('{"error"'): return {"ok": False, "error": "téléchargement échoué", "url": original}
+return {"ok": True, "url": original, "size": len(content), "content": content[:MAX_CONTENT]}
+
+def tool_import_spec_from_source(path):
+if not path: return {"ok": False, "error": "chemin requis"}
+p = Path(path).expanduser()
+if not p.exists(): return {"ok": False, "error": f"fichier introuvable : {path}"}
+try:
+content = p.read_text(encoding="utf-8", errors="ignore")
+return {"ok": True, "path": str(p.resolve()), "size": len(content), "content": content[:MAX_CONTENT]}
+except Exception as e:
+return {"ok": False, "error": str(e)[:300]}
+
+# ============================================================
+# SECTION 8 · HTML UI
+# ============================================================
+HTML_UI = r"""<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NEXUS GEN v__V__ — Port __PORT__ — MASSIF</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,system-ui,sans-serif;background:#050810;color:#c8e0f8;padding:20px;min-height:100vh;background-image:radial-gradient(ellipse at top,rgba(0,150,255,0.08),transparent 60%)}
+.container{max-width:1500px;margin:0 auto}
+h1{font-size:clamp(20px,4vw,32px);font-weight:800;letter-spacing:-1.5px;background:linear-gradient(135deg,#00d4ff,#a855f7,#ff0080);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px}
+.subtitle{color:#5a7898;font-size:12px;font-family:ui-monospace,monospace;margin-bottom:20px}
+.badge{display:inline-block;padding:3px 10px;background:rgba(0,212,255,0.15);border:1px solid #00d4ff;color:#00d4ff;border-radius:20px;font-size:10px;font-family:ui-monospace,monospace;margin-left:8px}
+.badge.massif{background:rgba(0,255,136,0.15);border-color:#00ff88;color:#00ff88}
+.panel{background:rgba(8,15,25,0.9);border:1px solid #1a3a5a;border-radius:14px;padding:20px;margin-bottom:14px}
+.panel h2{color:#00d4ff;font-size:12px;letter-spacing:2px;text-transform:uppercase;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid #1a3a5a}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px}
+.stat{background:rgba(0,0,0,0.5);border:1px solid #1a3a5a;border-radius:10px;padding:12px}
+.stat-lbl{color:#5a7898;font-size:10px;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
+.stat-val{color:#00d4ff;font-size:20px;font-weight:800;font-family:ui-monospace,monospace}
+.stat-val.ok{color:#00ff88}
+.stat-val.warn{color:#ffaa00}
+.stat-val.danger{color:#ff3366}
+.form-group{margin-bottom:12px}
+.form-group label{display:block;font-size:11px;color:#5a7898;letter-spacing:1px;text-transform:uppercase;margin-bottom:5px}
+.form-group input,.form-group textarea,.form-group select{width:100%;padding:11px 14px;background:rgba(0,0,0,0.6);border:1px solid #1a3a5a;border-radius:9px;color:#c8e0f8;font-size:13px;font-family:inherit;outline:none}
+.form-group textarea{min-height:80px;resize:vertical;font-family:ui-monospace,monospace}
+.form-group input:focus,.form-group textarea:focus,.form-group select:focus{border-color:#00d4ff}
+.btn{background:linear-gradient(135deg,#00d4ff,#a855f7);color:#000;border:none;padding:12px 22px;border-radius:10px;font-weight:800;cursor:pointer;font-family:ui-monospace,monospace;font-size:12px;letter-spacing:1px;margin-right:6px;margin-bottom:6px;text-transform:uppercase}
+.btn:hover{opacity:0.9}
+.btn.sec{background:transparent;color:#00d4ff;border:1px solid #00d4ff}
+.btn.green{background:linear-gradient(135deg,#00ff88,#00d4ff);color:#000}
+.btn.gold{background:linear-gradient(135deg,#ffd700,#ffaa00);color:#000}
+.btn.massif{background:linear-gradient(135deg,#ff3366,#a855f7);color:#fff;padding:16px 32px;font-size:14px}
+.result{background:rgba(0,0,0,0.7);border:1px solid #1a3a5a;border-radius:10px;padding:16px;font-family:ui-monospace,monospace;font-size:11px;color:#00ffc8;white-space:pre;overflow:auto;line-height:1.5;margin-top:12px;max-height:600px}
+.editor{width:100%;min-height:400px;background:#000;border:1px solid #1a3a5a;border-radius:10px;padding:16px;color:#00ffc8;font-family:ui-monospace,monospace;font-size:13px;line-height:1.6;resize:vertical;outline:none}
+.editor:focus{border-color:#00d4ff;box-shadow:0 0 20px rgba(0,212,255,0.2)}
+.buffer-info{background:rgba(0,212,255,0.05);border:1px solid #1a3a5a;border-radius:8px;padding:10px;font-family:ui-monospace,monospace;font-size:11px;color:#00d4ff;margin-bottom:12px}
+.slider-container{display:flex;align-items:center;gap:12px;margin:12px 0}
+.slider-container input[type="range"]{flex:1;height:8px;border-radius:4px;background:linear-gradient(90deg,#00ff88,#00d4ff,#ff3366);outline:none}
+.slider-value{font-family:ui-monospace,monospace;font-size:16px;font-weight:800;color:#00ff88;min-width:100px;text-align:right}
+.footer{text-align:center;color:#2a3a5a;font-size:11px;margin-top:30px;font-family:ui-monospace,monospace}
+.loader{text-align:center;padding:30px;color:#00d4ff}
+.spinner{display:inline-block;width:30px;height:30px;border:3px solid rgba(0,212,255,0.3);border-top-color:#00d4ff;border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:10px}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style></head><body>
+<div class="container">
+<h1>NEXUS GEN v__V__ <span class="badge">PORT __PORT__</span> <span class="badge massif">MASSIF 10K-20K</span> <span class="badge">BUFFER 100K</span></h1>
+<div class="subtitle">__LANG__ langages · __EXT__ extensions · __API__ APIs · __NICHE__ niches · __GEN__ générateurs · __MASSIF__ générateurs massifs</div>
+
+<div class="buffer-info">
+⚡ BUFFER ACTIF : 100 000 OCTETS · Port : __PORT__ · Génération massive : 10 000 à 20 000 lignes
+</div>
+
+<div class="panel">
+<h2>🔥 GÉNÉRATION MASSIVE (10K - 20K LIGNES)</h2>
+<div class="form-group">
+<label>Prompt</label>
+<input id="mass-prompt" value="Serveur API REST multi-modules avec cache et stats">
+</div>
+<div class="form-group">
+<label>Langage (12 générateurs massifs)</label>
+<select id="mass-lang">
+<option value="python">Python</option>
+<option value="rust">Rust</option>
+<option value="java">Java</option>
+<option value="go">Go</option>
+<option value="c">C</option>
+<option value="cpp">C++</option>
+<option value="csharp">C#</option>
+<option value="ruby">Ruby</option>
+<option value="php">PHP</option>
+<option value="swift">Swift</option>
+<option value="kotlin">Kotlin</option>
+<option value="typescript">TypeScript</option>
+</select>
+</div>
+<div class="form-group">
+<label>Port de sortie</label>
+<input id="mass-port" type="number" value="3001">
+</div>
+<div class="form-group">
+<label>Nombre de lignes cible (10 000 à 20 000)</label>
+<div class="slider-container">
+<input id="mass-lignes" type="range" min="10000" max="20000" step="1000" value="10000" oninput="updateSlider()">
+<span class="slider-value" id="mass-lignes-val">10 000</span>
+</div>
+</div>
+<button class="btn massif" onclick="genererMassif()">⚡ GÉNÉRER MASSIF</button>
+</div>
+
+<div class="panel">
+<h2>📝 Éditeur de code</h2>
+<div class="form-group">
+<label>Langage</label>
+<select id="editor-lang">
+<option>python</option><option>rust</option><option>java</option><option>go</option>
+<option>c</option><option>cpp</option><option>csharp</option><option>ruby</option>
+<option>php</option><option>swift</option><option>kotlin</option><option>typescript</option>
+</select>
+</div>
+<textarea id="editor" class="editor">#!/usr/bin/env python3
+# NEXUS Editor — Buffer 100K
+def hello(name):
+return f"Hello {name}"
+
+if __name__ == "__main__":
+print(hello("Maître Aissa"))</textarea>
+<div style="margin-top:10px">
+<button class="btn" onclick="analyserEditeur()">ANALYSER</button>
+<button class="btn sec" onclick="telechargerCode()">TÉLÉCHARGER</button>
+<button class="btn green" onclick="effacerEditeur()">EFFACER</button>
+</div>
+<div id="editor-info" style="margin-top:10px;color:#5a7898;font-size:11px;font-family:ui-monospace,monospace">Caractères : 0 / 100 000</div>
+</div>
+
+<div class="panel">
+<h2>🚀 GÉNÉRATION SIMPLE (templates courts)</h2>
+<div class="form-group">
+<label>Prompt</label>
+<input id="gen-prompt" value="Serveur API REST avec endpoint /health">
+</div>
+<div class="form-group">
+<label>Langage</label>
+<select id="gen-lang">
+<option>python</option><option>rust</option><option>java</option><option>go</option><option>typescript</option>
+</select>
+</div>
+<div class="form-group">
+<label>Port</label>
+<input id="gen-port" type="number" value="3001">
+</div>
+<button class="btn" onclick="generer()">GÉNÉRER SIMPLE</button>
+</div>
+
+<div class="panel">
+<h2>🔍 Recherche multi-source (10 APIs)</h2>
+<div class="form-group">
+<label>Query</label>
+<input id="query" value="python security best practices">
+</div>
+<button class="btn" onclick="rechercher()">RECHERCHER</button>
+<button class="btn green" onclick="enrichir()">ENRICHIR KB</button>
+</div>
+
+<div class="panel" id="result-panel" style="display:none">
+<h2>Résultats</h2>
+<div class="grid" id="stats"></div>
+<div id="tab-problemes"></div>
+</div>
+
+<div class="footer">NEXUS GEN v__V__ · __AUTEUR__ · __LIC__ · Port __PORT__ · MASSIF 10K-20K · 8 outils</div>
+</div>
+
+<script>
+function esc(s){return String(s||'').replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function post(url, data){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());}
+
+function updateSlider(){
+var v = document.getElementById('mass-lignes').value;
+document.getElementById('mass-lignes-val').textContent = parseInt(v).toLocaleString();
+}
+
+document.getElementById('editor').addEventListener('input', compterCaracteres);
+function compterCaracteres(){
+var len = document.getElementById('editor').value.length;
+var info = document.getElementById('editor-info');
+info.textContent = 'Caractères : ' + len.toLocaleString() + ' / 100 000';
+info.style.color = len > 100000 ? '#ff3366' : len > 90000 ? '#ffaa00' : '#5a7898';
+}
+
+async function genererMassif(){
+var prompt = document.getElementById('mass-prompt').value.trim();
+var lang = document.getElementById('mass-lang').value;
+var port = parseInt(document.getElementById('mass-port').value) || 3001;
+var lignes = parseInt(document.getElementById('mass-lignes').value) || 10000;
+if(!prompt){ alert('Prompt requis'); return; }
+
+document.getElementById('result-panel').style.display = 'block';
+document.getElementById('stats').innerHTML = '<div class="loader"><div class="spinner"></div><div>Génération massive ' + lignes + ' lignes...</div></div>';
+
+var t0 = Date.now();
+try {
+var d = await post('/api/generate-massif', {
+prompt: prompt, langage: lang, port: port, lignes: lignes
+});
+var dur = ((Date.now() - t0)/1000).toFixed(2);
+
+if(!d.ok){
+document.getElementById('stats').innerHTML = '<div class="result">Erreur : ' + esc(d.error||'inconnue') + '</div>';
+return;
+}
+
+var h = '<div class="stat"><div class="stat-lbl">Langage</div><div class="stat-val">' + esc(d.langage) + '</div></div>';
+h += '<div class="stat"><div class="stat-lbl">Lignes générées</div><div class="stat-val ok">' + (d.lignes||0).toLocaleString() + '</div></div>';
+h += '<div class="stat"><div class="stat-lbl">Cible</div><div class="stat-val">' + (d.cible||0).toLocaleString() + '</div></div>';
+h += '<div class="stat"><div class="stat-lbl">Taille</div><div class="stat-val">' + ((d.octets||0)/1024).toFixed(1) + ' Ko</div></div>';
+h += '<div class="stat"><div class="stat-lbl">Durée</div><div class="stat-val">' + dur + 's</div></div>';
+h += '<div class="stat"><div class="stat-lbl">Modules</div><div class="stat-val">' + (d.modules||0) + '</div></div>';
+document.getElementById('stats').innerHTML = h;
+
+var h2 = '<div style="margin-bottom:8px"><button class="btn sec" onclick="telechargerMassif()">💾 TÉLÉCHARGER LE CODE</button> <button class="btn sec" onclick="copierMassif()">📋 COPIER</button></div>';
+h2 += '<div class="result" id="mass-code" style="max-height:500px">' + esc(d.code||'') + '</div>';
+document.getElementById('tab-problemes').innerHTML = h2;
+window.__massif_code = d.code || '';
+window.__massif_lang = d.langage || 'python';
+} catch(e){
+document.getElementById('stats').innerHTML = '<div class="result">Erreur : ' + esc(e.message) + '</div>';
+}
+}
+
+function telechargerMassif(){
+var code = window.__massif_code || '';
+var lang = window.__massif_lang || 'python';
+var exts = {python:'.py',rust:'.rs',java:'.java',go:'.go',c:'.c',cpp:'.cpp',csharp:'.cs',ruby:'.rb',php:'.php',swift:'.swift',kotlin:'.kt',typescript:'.ts'};
+var blob = new Blob([code], {type:'text/plain'});
+var a = document.createElement('a');
+a.href = URL.createObjectURL(blob);
+a.download = 'nexus_massif_' + Date.now() + (exts[lang]||'.txt');
+a.click();
+}
+
+function copierMassif(){
+navigator.clipboard.writeText(window.__massif_code || '').then(() => alert('Code copié !'));
+}
+
+async function analyserEditeur(){
+var code = document.getElementById('editor').value;
+var lang = document.getElementById('editor-lang').value;
+if(!code.trim()){ alert('Éditeur vide'); return; }
+document.getElementById('result-panel').style.display = 'block';
+document.getElementById('stats').innerHTML = '<div class="loader"><div class="spinner"></div><div>Analyse...</div></div>';
+var d = await post('/api/analyze-code', {code: code, langage: lang});
+var h = '<div class="stat"><div class="stat-lbl">Langage</div><div class="stat-val">' + esc(lang) + '</div></div>';
+h += '<div class="stat"><div class="stat-lbl">Lignes</div><div class="stat-val">' + (d.metriques?.lignes_total||0) + '</div></div>';
+h += '<div class="stat"><div class="stat-lbl">Problèmes</div><div class="stat-val ' + ((d.problemes||[]).length>0?'warn':'ok') + '">' + (d.problemes||[]).length + '</div></div>';
+document.getElementById('stats').innerHTML = h;
+document.getElementById('tab-problemes').innerHTML = (d.problemes||[]).slice(0,50).map(p =>
+'<div class="result">[' + p.severite.toUpperCase() + '] ' + p.type + ' ligne ' + p.ligne + '</div>'
+).join('') || '<div class="result">✓ Aucun problème</div>';
+}
+
+function telechargerCode(){
+var code = document.getElementById('editor').value;
+var lang = document.getElementById('editor-lang').value;
+var exts = {python:'.py',rust:'.rs',java:'.java',go:'.go',c:'.c',cpp:'.cpp',csharp:'.cs',ruby:'.rb',php:'.php',swift:'.swift',kotlin:'.kt',typescript:'.ts'};
+var blob = new Blob([code], {type:'text/plain'});
+var a = document.createElement('a');
+a.href = URL.createObjectURL(blob);
+a.download = 'nexus_code_' + Date.now() + (exts[lang]||'.txt');
+a.click();
+}
+
+function effacerEditeur(){
+if(confirm('Effacer ?')){
+document.getElementById('editor').value = '';
+compterCaracteres();
+}
+}
+
+async function generer(){
+var prompt = document.getElementById('gen-prompt').value.trim();
+var lang = document.getElementById('gen-lang').value;
+var port = parseInt(document.getElementById('gen-port').value) || 3001;
+if(!prompt) return;
+var d = await post('/api/generate', {prompt: prompt, langage: lang, port: port});
+document.getElementById('result-panel').style.display = 'block';
+document.getElementById('stats').innerHTML = '<div class="stat"><div class="stat-lbl">Langage</div><div class="stat-val">' + esc(d.langage) + '</div></div><div class="stat"><div class="stat-lbl">Lignes</div><div class="stat-val">' + (d.lignes||0) + '</div></div>';
+document.getElementById('tab-problemes').innerHTML = '<div class="result">' + esc(d.code||'') + '</div>';
+}
+
+async function rechercher(){
+var q = document.getElementById('query').value.trim();
+if(!q) return;
+document.getElementById('result-panel').style.display = 'block';
+var r = await fetch('/api/search?q=' + encodeURIComponent(q));
+var d = await r.json();
+var results = d.results || {};
+document.getElementById('stats').innerHTML = '<div class="stat"><div class="stat-lbl">APIs</div><div class="stat-val">' + Object.keys(results).length + '</div></div>';
+var h = '';
+for(var k in results){
+h += '<div class="result"><b>' + esc(k) + '</b> : ' + (Array.isArray(results[k])?results[k].length:0) + ' items</div>';
+}
+document.getElementById('tab-problemes').innerHTML = h;
+}
+
+async function enrichir(){
+var q = document.getElementById('query').value.trim();
+if(!q) return;
+var d = await post('/api/enrich?q=' + encodeURIComponent(q), {});
+alert('KB enrichie : +' + (d.added||0) + ' items');
+}
+
+compterCaracteres();
+</script></body></html>
+"""
+
+# ============================================================
+# SECTION 9 · HTTP HANDLER
+# ============================================================
+class Handler(BaseHTTPRequestHandler):
+rbufsize = BUFFER_SIZE
+wbufsize = BUFFER_SIZE
+def log_message(self, *a): pass
+def _send(self, code, body, ctype="application/json"):
+try:
+if isinstance(body, str): body = body.encode("utf-8")
+self.send_response(code)
+self.send_header("Content-Type", ctype + "; charset=utf-8")
+self.send_header("Access-Control-Allow-Origin", "*")
+self.send_header("Content-Length", str(len(body)))
+self.send_header("X-Buffer-Size", str(BUFFER_SIZE))
+self.end_headers()
+for i in range(0, len(body), BUFFER_SIZE):
+self.wfile.write(body[i:i+BUFFER_SIZE])
+self.wfile.flush()
+except (BrokenPipeError, ConnectionResetError): pass
+def _read_json(self):
+try:
+n = int(self.headers.get("Content-Length", "0"))
+if n > BUFFER_SIZE:
+chunks = []
+remaining = n
+while remaining > 0:
+chunk = self.rfile.read(min(BUFFER_SIZE, remaining))
+if not chunk: break
+chunks.append(chunk); remaining -= len(chunk)
+raw = b"".join(chunks)
+else: raw = self.rfile.read(n)
+return json.loads(raw.decode("utf-8"))
+except: return {}
+def do_GET(self):
+p = self.path.split("?")[0]
+qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+if p in ("/", "/index.html"):
+html = (HTML_UI.replace("__V__", VERSION)
+.replace("__LANG__", str(len(LANGAGES_SUPPORTES)))
+.replace("__EXT__", str(TOTAL_EXTENSIONS))
+.replace("__API__", str(len(APIS)))
+.replace("__NICHE__", str(len(NICHES)))
+.replace("__GEN__", str(len(GENERATEURS)))
+.replace("__MASSIF__", str(len(BLOCS)))
+.replace("__AUTEUR__", AUTEUR)
+.replace("__LIC__", LICENCE)
+.replace("__PORT__", str(PORT)))
+return self._send(200, html, "text/html")
+if p == "/api/health":
+return self._send(200, json.dumps({
+"ok": True, "version": VERSION, "port": PORT,
+"buffer_size": BUFFER_SIZE, "langages": len(LANGAGES_SUPPORTES),
+"apis": list(APIS.keys()), "massif_langs": list(BLOCS.keys()),
+"min_lignes": MIN_LIGNES, "max_lignes": MAX_LIGNES,
+}))
+if p == "/api/buffer":
+return self._send(200, json.dumps({
+"buffer_size": BUFFER_SIZE, "rbufsize": self.rbufsize,
+"wbufsize": self.wbufsize, "port": PORT,
+"min_lignes": MIN_LIGNES, "max_lignes": MAX_LIGNES,
+}))
+if p == "/api/languages":
+return self._send(200, json.dumps(tool_list_languages(), ensure_ascii=False))
+if p == "/api/tools":
+return self._send(200, json.dumps({"tools": [
+{"name": "list_languages", "endpoint": "/api/languages"},
+{"name": "parse_spec", "endpoint": "/api/parse-spec"},
+{"name": "validate_spec", "endpoint": "/api/validate-spec"},
+{"name": "get_generation_context", "endpoint": "/api/generation-context"},
+{"name": "get_project_structure", "endpoint": "/api/project-structure"},
+{"name": "ensure_parity", "endpoint": "/api/ensure-parity"},
+{"name": "import_spec_from_github", "endpoint": "/api/import-github"},
+{"name": "import_spec_from_source", "endpoint": "/api/import-source"},
+], "count": 8}))
+if p == "/api/search":
+q = qs.get("q", [""])[0]
+if not q: return self._send(400, json.dumps({"error": "q manquant"}))
+return self._send(200, json.dumps({"query": q, "results": search_all_apis(q)}, ensure_ascii=False, default=str))
+if p == "/api/enrich":
+q = qs.get("q", [""])[0]
+if not q: return self._send(400, json.dumps({"error": "q manquant"}))
+return self._send(200, json.dumps({"query": q, "added": enrichir_kb(q), "kb_size": KB.size()}))
+return self._send(404, json.dumps({"error": "not found"}))
+def do_POST(self):
+p = self.path.split("?")[0]
+data = self._read_json()
+
+# ⚡ ENDPOINT MASSIF
+if p == "/api/generate-massif":
+prompt = data.get("prompt", "").strip()
+langage = data.get("langage", "python").lower()
+port = int(data.get("port", 3001))
+lignes = int(data.get("lignes", DEFAULT_LIGNES))
+
+if not prompt: return self._send(400, json.dumps({"error": "prompt manquant"}))
+if langage not in BLOCS: return self._send(400, json.dumps({"error": f"langage massif non supporté: {langage}"}))
+
+# Validation de la cible
+lignes = max(MIN_LIGNES, min(MAX_LIGNES, lignes))
+
+t0 = time.time()
+code = generer_massif(prompt, langage, port, lignes)
+dur = round(time.time() - t0, 3)
+nb_lignes = code.count("\n") + 1
+nb_modules = code.count("MODULE ") or code.count("class Module")
+
+return self._send(200, json.dumps({
+"ok": True, "langage": langage, "port": port,
+"code": code, "lignes": nb_lignes, "cible": lignes,
+"octets": len(code.encode()), "modules": nb_modules,
+"duration_s": dur, "buffer": BUFFER_SIZE,
+}, ensure_ascii=False))
+
+if p == "/api/generate":
+prompt = data.get("prompt", "").strip()
+langage = data.get("langage", "python").lower()
+port = int(data.get("port", 3001))
+if not prompt: return self._send(400, json.dumps({"error": "prompt manquant"}))
+code = generer_script(prompt, langage, port)
+return self._send(200, json.dumps({"ok": True, "langage": langage, "port": port, "code": code, "lignes": code.count("\n")}, ensure_ascii=False))
+if p == "/api/analyze-code":
+code = data.get("code", "")
+langage = data.get("langage", "python")
+if not code: return self._send(400, json.dumps({"error": "code manquant"}))
+return self._send(200, json.dumps(analyser_code(code, langage), ensure_ascii=False))
+if p == "/api/parse-spec":
+return self._send(200, json.dumps(tool_parse_spec(data.get("spec", "")), ensure_ascii=False))
+if p == "/api/validate-spec":
+return self._send(200, json.dumps(tool_validate_spec(data.get("spec", {})), ensure_ascii=False))
+if p == "/api/generation-context":
+return self._send(200, json.dumps(tool_get_generation_context(data.get("spec", {}), data.get("langage", "python")), ensure_ascii=False))
+if p == "/api/project-structure":
+return self._send(200, json.dumps(tool_get_project_structure(data.get("langage", "python")), ensure_ascii=False))
+if p == "/api/ensure-parity":
+return self._send(200, json.dumps(tool_ensure_parity(data.get("code1", ""), data.get("code2", ""), data.get("langage", "python")), ensure_ascii=False))
+if p == "/api/import-github":
+return self._send(200, json.dumps(tool_import_spec_from_github(data.get("url", "")), ensure_ascii=False))
+if p == "/api/import-source":
+return self._send(200, json.dumps(tool_import_spec_from_source(data.get("path", "")), ensure_ascii=False))
+return self._send(404, json.dumps({"error": "not found"}))
+
+class Server(ThreadingMixIn, HTTPServer):
+daemon_threads = True
+allow_reuse_address = True
+request_queue_size = 1000
+
+def ip_locale():
+try:
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s.connect(("8.8.8.8", 80))
+ip = s.getsockname()[0]; s.close(); return ip
+except: return "localhost"
+
+def main():
+print("=" * 72)
+print(f" 🧬 NEXUS GEN v{VERSION} — MONOLITHE MASSIF")
+print(f" {AUTEUR} · {LICENCE}")
+print(f" 🚀 PORT : {PORT} · BUFFER : {BUFFER_SIZE} octets")
+print(f" 🔥 GÉNÉRATION MASSIVE : {MIN_LIGNES:,} à {MAX_LIGNES:,} lignes")
+print("=" * 72)
+print()
+print(f" Langages : {len(LANGAGES_SUPPORTES)}")
+print(f" Extensions : {TOTAL_EXTENSIONS}")
+print(f" Niches : {len(NICHES)}")
+print(f" APIs : {len(APIS)}")
+print(f" Générateurs : {len(GENERATEURS)} (simples)")
+print(f" Générateurs MASSIFS : {len(BLOCS)} (10K-20K lignes)")
+print(f" Outils MCP : 8")
+print(f" Buffer : {BUFFER_SIZE} octets")
+print()
+print(f" Local : http://localhost:{PORT}/")
+print(f" Réseau : http://{ip_locale()}:{PORT}/")
+print()
+print(" Endpoints :")
+print(" POST /api/generate-massif ← 10K à 20K lignes")
+print(" POST /api/generate ← templates courts")
+print(" GET /api/health · GET /api/buffer")
+print(" GET /api/languages · GET /api/tools")
+print(" POST /api/analyze-code · POST /api/parse-spec")
+print()
+print(f" Langages massifs : {', '.join(sorted(BLOCS.keys()))}")
+print()
+print(" Ctrl+C pour arrêter")
+print()
+try:
+with Server(("0.0.0.0", PORT), Handler) as httpd:
+httpd.serve_forever()
+except KeyboardInterrupt: print("\n Arrêté.")
+except OSError as e:
+print(f" Erreur port {PORT} : {e}")
+sys.exit(1)
+
+if __name__ == "__main__":
+try: main()
+except Exception as e:
+print(f"Fatal : {e}", file=sys.stderr)
+sys.exit(1)
