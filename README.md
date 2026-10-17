@@ -27,7 +27,7 @@ Génération: ~216 lignes par script
 Interface: Dashboard web + API REST + CLI
 📦 Installation
 # Clone
-git clone https://github.com/ton-pseudo/nexus-generator-pro
+git [clone https://github.com/ton-pseudo/nexus-generator-pro](https://github.com/Aissamohammedi88/NEXUS-GENERATOR-PRO-v2.0.0---G-n-rateur-de-scripts-Python-avec-recherche-web-int-gr-e)
 cd nexus-generator-pro
 
 # Lance (pas de dépendances externes!)
